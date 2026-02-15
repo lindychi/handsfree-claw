@@ -1,0 +1,183 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 20px;
+  padding-top: env(safe-area-inset-top, 20px);
+  padding-bottom: env(safe-area-inset-bottom, 20px);
+}
+
+.header {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.header h1 {
+  font-size: 1.8rem;
+  margin-bottom: 10px;
+}
+
+.status {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+/* 설정 화면 */
+.config {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 15px;
+  max-width: 400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.config h2 {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.config input {
+  padding: 15px;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: #0f0f1a;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.config input::placeholder {
+  color: #666;
+}
+
+.config button {
+  padding: 15px;
+  border: none;
+  border-radius: 10px;
+  background: #4a90d9;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.config button:hover {
+  background: #3a7bc8;
+}
+
+/* 메시지 영역 */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message {
+  display: flex;
+  gap: 10px;
+  padding: 12px 15px;
+  border-radius: 15px;
+  max-width: 85%;
+}
+
+.message.user {
+  background: #4a90d9;
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.message.assistant {
+  background: #2a2a4a;
+  align-self: flex-start;
+}
+
+.message .role {
+  font-size: 1.2rem;
+}
+
+.message p {
+  line-height: 1.4;
+}
+
+/* 컨트롤 영역 */
+.controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 0;
+  gap: 15px;
+}
+
+.mic-button {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(145deg, #4a90d9, #3a7bc8);
+  font-size: 2.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 5px 20px rgba(74, 144, 217, 0.4);
+}
+
+.mic-button:active,
+.mic-button.listening {
+  transform: scale(1.1);
+  background: linear-gradient(145deg, #e74c3c, #c0392b);
+  box-shadow: 0 5px 30px rgba(231, 76, 60, 0.6);
+}
+
+.hint {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+/* 리셋 버튼 */
+.reset-button {
+  padding: 10px 20px;
+  border: 1px solid #444;
+  border-radius: 8px;
+  background: transparent;
+  color: #888;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.reset-button:hover {
+  border-color: #666;
+  color: #aaa;
+}
+
+/* 다크모드 대응 */
+@media (prefers-color-scheme: light) {
+  .app {
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ed 100%);
+    color: #333;
+  }
+
+  .config input {
+    background: #fff;
+    border-color: #ddd;
+    color: #333;
+  }
+
+  .message.assistant {
+    background: #e8eaed;
+  }
+}
