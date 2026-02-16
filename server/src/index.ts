@@ -191,7 +191,12 @@ app.post('/api/auth/request-code', async (req, res) => {
     return res.status(500).json({ error: 'Failed to send email' });
   }
 
-  res.json({ message: 'Verification code sent' });
+  // DEV mode: return code in response when Resend is not configured
+  if (!resend) {
+    res.json({ message: 'Verification code sent', code });
+  } else {
+    res.json({ message: 'Verification code sent' });
+  }
 });
 
 // 인증 코드 검증
