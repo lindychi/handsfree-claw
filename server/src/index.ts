@@ -3,7 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import { createServer } from 'http';
 import { nanoid } from 'nanoid';
-import Database from 'better-sqlite3';
+import pg from 'pg';
 import { Resend } from 'resend';
 
 const app = express();
@@ -13,48 +13,57 @@ app.use(express.json());
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ==================== Database ====================
-const db = new Database(process.env.DB_PATH || './data/handsfree.db');
+// ==================== Database (PostgreSQL) ====================
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
 // 테이블 생성
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+async function initDB() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-  CREATE TABLE IF NOT EXISTS verification_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,
-    code TEXT NOT NULL,
-    expires_at DATETIME NOT NULL,
-    used INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id SERIAL PRIMARY KEY,
+        email TEXT NOT NULL,
+        code TEXT NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-  CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    token TEXT UNIQUE NOT NULL,
-    expires_at DATETIME NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
+      CREATE TABLE IF NOT EXISTS sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        token TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-  CREATE TABLE IF NOT EXISTS pairings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    gateway_token TEXT UNIQUE NOT NULL,
-    name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  );
+      CREATE TABLE IF NOT EXISTS pairings (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        gateway_token TEXT UNIQUE NOT NULL,
+        name TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
-  CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-  CREATE INDEX IF NOT EXISTS idx_pairings_user ON pairings(user_id);
-  CREATE INDEX IF NOT EXISTS idx_pairings_token ON pairings(gateway_token);
-`);
+      CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+      CREATE INDEX IF NOT EXISTS idx_pairings_user ON pairings(user_id);
+      CREATE INDEX IF NOT EXISTS idx_pairings_token ON pairings(gateway_token);
+    `);
+    console.log('[DB] Tables initialized');
+  } finally {
+    client.release();
+  }
+}
 
 // ==================== Email (Resend) ====================
 const resend = process.env.RESEND_API_KEY 
@@ -64,7 +73,7 @@ const resend = process.env.RESEND_API_KEY
 async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
   if (!resend) {
     console.log(`[Email] RESEND_API_KEY not set. Code for ${email}: ${code}`);
-    return true; // 개발 모드에서는 콘솔 출력
+    return true;
   }
 
   try {
@@ -92,55 +101,63 @@ function generateCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-function getOrCreateUser(email: string): { id: number; email: string } {
+async function getOrCreateUser(email: string): Promise<{ id: number; email: string }> {
   const normalizedEmail = email.toLowerCase().trim();
   
-  let user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(normalizedEmail) as any;
+  // Try to find existing user
+  let result = await pool.query('SELECT id, email FROM users WHERE email = $1', [normalizedEmail]);
   
-  if (!user) {
-    const result = db.prepare('INSERT INTO users (email) VALUES (?)').run(normalizedEmail);
-    user = { id: result.lastInsertRowid, email: normalizedEmail };
+  if (result.rows.length === 0) {
+    // Create new user
+    result = await pool.query(
+      'INSERT INTO users (email) VALUES ($1) RETURNING id, email',
+      [normalizedEmail]
+    );
   }
   
-  return user;
+  return result.rows[0];
 }
 
-function createSession(userId: number): string {
+async function createSession(userId: number): Promise<string> {
   const token = `sess_${nanoid(32)}`;
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30일
   
-  db.prepare('INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)')
-    .run(userId, token, expiresAt.toISOString());
+  await pool.query(
+    'INSERT INTO sessions (user_id, token, expires_at) VALUES ($1, $2, $3)',
+    [userId, token, expiresAt]
+  );
   
   return token;
 }
 
-function getUserFromSession(token: string): { id: number; email: string } | null {
-  const session = db.prepare(`
-    SELECT s.user_id, s.expires_at, u.email
+async function getUserFromSession(token: string): Promise<{ id: number; email: string } | null> {
+  const result = await pool.query(`
+    SELECT s.user_id as id, s.expires_at, u.email
     FROM sessions s
     JOIN users u ON s.user_id = u.id
-    WHERE s.token = ?
-  `).get(token) as any;
+    WHERE s.token = $1
+  `, [token]);
 
-  if (!session) return null;
+  if (result.rows.length === 0) return null;
+  
+  const session = result.rows[0];
   if (new Date(session.expires_at) < new Date()) {
-    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+    await pool.query('DELETE FROM sessions WHERE token = $1', [token]);
     return null;
   }
 
-  return { id: session.user_id, email: session.email };
+  return { id: session.id, email: session.email };
 }
 
 // Auth middleware
-function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const token = authHeader.slice(7);
-  const user = getUserFromSession(token);
+  const user = await getUserFromSession(token);
   
   if (!user) {
     return res.status(401).json({ error: 'Invalid or expired session' });
@@ -163,8 +180,10 @@ app.post('/api/auth/request-code', async (req, res) => {
   const code = generateCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10분
 
-  db.prepare('INSERT INTO verification_codes (email, code, expires_at) VALUES (?, ?, ?)')
-    .run(email.toLowerCase().trim(), code, expiresAt.toISOString());
+  await pool.query(
+    'INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3)',
+    [email.toLowerCase().trim(), code, expiresAt]
+  );
 
   const sent = await sendVerificationEmail(email, code);
   
@@ -176,7 +195,7 @@ app.post('/api/auth/request-code', async (req, res) => {
 });
 
 // 인증 코드 검증
-app.post('/api/auth/verify', (req, res) => {
+app.post('/api/auth/verify', async (req, res) => {
   const { email, code } = req.body;
 
   if (!email || !code) {
@@ -185,26 +204,27 @@ app.post('/api/auth/verify', (req, res) => {
 
   const normalizedEmail = email.toLowerCase().trim();
   
-  const verification = db.prepare(`
+  const result = await pool.query(`
     SELECT id, expires_at FROM verification_codes 
-    WHERE email = ? AND code = ? AND used = 0
+    WHERE email = $1 AND code = $2 AND used = FALSE
     ORDER BY created_at DESC LIMIT 1
-  `).get(normalizedEmail, code) as any;
+  `, [normalizedEmail, code]);
 
-  if (!verification) {
+  if (result.rows.length === 0) {
     return res.status(400).json({ error: 'Invalid code' });
   }
 
+  const verification = result.rows[0];
   if (new Date(verification.expires_at) < new Date()) {
     return res.status(400).json({ error: 'Code expired' });
   }
 
   // 코드 사용 처리
-  db.prepare('UPDATE verification_codes SET used = 1 WHERE id = ?').run(verification.id);
+  await pool.query('UPDATE verification_codes SET used = TRUE WHERE id = $1', [verification.id]);
 
   // 사용자 생성/조회 및 세션 발급
-  const user = getOrCreateUser(normalizedEmail);
-  const sessionToken = createSession(user.id);
+  const user = await getOrCreateUser(normalizedEmail);
+  const sessionToken = await createSession(user.id);
 
   res.json({
     token: sessionToken,
@@ -213,9 +233,9 @@ app.post('/api/auth/verify', (req, res) => {
 });
 
 // 로그아웃
-app.post('/api/auth/logout', authMiddleware, (req, res) => {
+app.post('/api/auth/logout', authMiddleware, async (req, res) => {
   const token = req.headers.authorization?.slice(7);
-  db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  await pool.query('DELETE FROM sessions WHERE token = $1', [token]);
   res.json({ message: 'Logged out' });
 });
 
@@ -228,16 +248,16 @@ app.get('/api/me', authMiddleware, (req, res) => {
 // ==================== Pairing Routes ====================
 
 // 내 페어링 목록
-app.get('/api/pairings', authMiddleware, (req, res) => {
+app.get('/api/pairings', authMiddleware, async (req, res) => {
   const user = (req as any).user;
   
-  const pairings = db.prepare(`
+  const result = await pool.query(`
     SELECT id, gateway_token, name, created_at 
-    FROM pairings WHERE user_id = ?
+    FROM pairings WHERE user_id = $1
     ORDER BY created_at DESC
-  `).all(user.id);
+  `, [user.id]);
 
-  res.json(pairings);
+  res.json(result.rows);
 });
 
 // 페어링 등록 (Gateway에서 호출)
@@ -248,19 +268,23 @@ app.post('/api/pairings/register', async (req, res) => {
     return res.status(400).json({ error: 'Email and gateway_token required' });
   }
 
-  const user = getOrCreateUser(email);
+  const user = await getOrCreateUser(email);
 
   // 이미 존재하는 토큰인지 확인
-  const existing = db.prepare('SELECT id FROM pairings WHERE gateway_token = ?').get(gateway_token);
+  const existing = await pool.query('SELECT id FROM pairings WHERE gateway_token = $1', [gateway_token]);
   
-  if (existing) {
+  if (existing.rows.length > 0) {
     // 업데이트
-    db.prepare('UPDATE pairings SET user_id = ?, name = ? WHERE gateway_token = ?')
-      .run(user.id, name || null, gateway_token);
+    await pool.query(
+      'UPDATE pairings SET user_id = $1, name = $2 WHERE gateway_token = $3',
+      [user.id, name || null, gateway_token]
+    );
   } else {
     // 새로 생성
-    db.prepare('INSERT INTO pairings (user_id, gateway_token, name) VALUES (?, ?, ?)')
-      .run(user.id, gateway_token, name || null);
+    await pool.query(
+      'INSERT INTO pairings (user_id, gateway_token, name) VALUES ($1, $2, $3)',
+      [user.id, gateway_token, name || null]
+    );
   }
 
   console.log(`[Pairing] Registered ${gateway_token} for ${email}`);
@@ -268,14 +292,16 @@ app.post('/api/pairings/register', async (req, res) => {
 });
 
 // 페어링 삭제
-app.delete('/api/pairings/:id', authMiddleware, (req, res) => {
+app.delete('/api/pairings/:id', authMiddleware, async (req, res) => {
   const user = (req as any).user;
   const { id } = req.params;
 
-  const result = db.prepare('DELETE FROM pairings WHERE id = ? AND user_id = ?')
-    .run(id, user.id);
+  const result = await pool.query(
+    'DELETE FROM pairings WHERE id = $1 AND user_id = $2',
+    [id, user.id]
+  );
 
-  if (result.changes === 0) {
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: 'Pairing not found' });
   }
 
@@ -284,7 +310,6 @@ app.delete('/api/pairings/:id', authMiddleware, (req, res) => {
 
 // ==================== WebSocket (Live Connections) ====================
 
-// 활성 연결 저장 (메모리)
 interface LiveConnection {
   gatewayToken: string;
   appSocket?: WebSocket;
@@ -293,11 +318,11 @@ interface LiveConnection {
 
 const liveConnections = new Map<string, LiveConnection>();
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   const url = new URL(req.url || '', `http://${req.headers.host}`);
   const token = url.searchParams.get('token');
-  const clientType = url.searchParams.get('type'); // 'app' or 'gateway'
-  const sessionToken = url.searchParams.get('session'); // 앱용 세션 토큰
+  const clientType = url.searchParams.get('type');
+  const sessionToken = url.searchParams.get('session');
 
   if (!token || !clientType) {
     ws.close(4000, 'Missing token or client type');
@@ -311,27 +336,27 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    const user = getUserFromSession(sessionToken);
+    const user = await getUserFromSession(sessionToken);
     if (!user) {
       ws.close(4003, 'Invalid session');
       return;
     }
 
-    // 해당 사용자의 페어링인지 확인
-    const pairing = db.prepare(`
-      SELECT id FROM pairings WHERE gateway_token = ? AND user_id = ?
-    `).get(token, user.id);
+    const pairing = await pool.query(
+      'SELECT id FROM pairings WHERE gateway_token = $1 AND user_id = $2',
+      [token, user.id]
+    );
 
-    if (!pairing) {
+    if (pairing.rows.length === 0) {
       ws.close(4004, 'Pairing not found for this user');
       return;
     }
   }
 
-  // Gateway 연결 시 토큰이 등록되어 있는지 확인
+  // Gateway 연결 시 토큰 확인
   if (clientType === 'gateway') {
-    const pairing = db.prepare('SELECT id FROM pairings WHERE gateway_token = ?').get(token);
-    if (!pairing) {
+    const pairing = await pool.query('SELECT id FROM pairings WHERE gateway_token = $1', [token]);
+    if (pairing.rows.length === 0) {
       ws.close(4005, 'Pairing not registered');
       return;
     }
@@ -339,7 +364,6 @@ wss.on('connection', (ws, req) => {
 
   console.log(`[WS] ${clientType} connected with token: ${token}`);
 
-  // 연결 관리
   let connection = liveConnections.get(token);
   if (!connection) {
     connection = { gatewayToken: token };
@@ -360,7 +384,6 @@ wss.on('connection', (ws, req) => {
     }
   }
 
-  // 메시지 릴레이
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString());
@@ -376,7 +399,6 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  // 연결 종료
   ws.on('close', () => {
     console.log(`[WS] ${clientType} disconnected: ${token}`);
     
@@ -393,18 +415,37 @@ wss.on('connection', (ws, req) => {
 });
 
 // ==================== Health Check ====================
-app.get('/health', (req, res) => {
-  const stats = {
-    status: 'ok',
-    users: (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count,
-    pairings: (db.prepare('SELECT COUNT(*) as count FROM pairings').get() as any).count,
-    liveConnections: liveConnections.size,
-  };
-  res.json(stats);
+app.get('/health', async (req, res) => {
+  try {
+    const usersResult = await pool.query('SELECT COUNT(*) as count FROM users');
+    const pairingsResult = await pool.query('SELECT COUNT(*) as count FROM pairings');
+    
+    res.json({
+      status: 'ok',
+      users: parseInt(usersResult.rows[0].count),
+      pairings: parseInt(pairingsResult.rows[0].count),
+      liveConnections: liveConnections.size,
+    });
+  } catch (err) {
+    res.json({
+      status: 'ok',
+      db: 'initializing',
+      liveConnections: liveConnections.size,
+    });
+  }
 });
 
 // ==================== Start Server ====================
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
-  console.log(`🎙️ HandsfreeClaw server running on port ${PORT}`);
+
+initDB().then(() => {
+  server.listen(PORT, () => {
+    console.log(`🎙️ HandsfreeClaw server running on port ${PORT}`);
+  });
+}).catch(err => {
+  console.error('Failed to initialize DB:', err);
+  // 서버는 시작하되 DB 없이
+  server.listen(PORT, () => {
+    console.log(`🎙️ HandsfreeClaw server running on port ${PORT} (DB unavailable)`);
+  });
 });
