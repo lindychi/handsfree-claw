@@ -9,26 +9,25 @@ interface Message {
   timestamp: Date
 }
 
-const DEFAULT_SERVER = 'wss://handsfree-claw-production.up.railway.app'
+const SERVER_URL = 'wss://handsfree-claw-production.up.railway.app'
+const HTTP_SERVER_URL = 'https://handsfree-claw-production.up.railway.app'
 
 function App() {
   const [isListening, setIsListening] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
-  const [serverUrl, setServerUrl] = useState('')
   const [pairingToken, setPairingToken] = useState('')
   const [isConfigured, setIsConfigured] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [gatewayConnected, setGatewayConnected] = useState(false)
-  const [status, setStatus] = useState('설정을 입력하세요')
+  const [status, setStatus] = useState('토큰을 생성하세요')
+  const [copied, setCopied] = useState(false)
   
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    // 저장된 설정 로드
-    const savedUrl = localStorage.getItem('serverUrl') || DEFAULT_SERVER
+    // 저장된 토큰 로드
     const savedToken = localStorage.getItem('pairingToken')
     
-    setServerUrl(savedUrl)
     if (savedToken) {
       setPairingToken(savedToken)
       setIsConfigured(true)
@@ -56,8 +55,7 @@ function App() {
   const connectWebSocket = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return
 
-    const wsUrl = serverUrl.replace('https://', 'wss://').replace('http://', 'ws://')
-    const url = `${wsUrl}?token=${pairingToken}&type=app`
+    const url = `${SERVER_URL}?token=${pairingToken}&type=app`
     
     setStatus('서버 연결 중...')
     console.log('Connecting to:', url)
@@ -164,23 +162,32 @@ function App() {
 
   const createPairing = async () => {
     try {
-      setStatus('페어링 생성 중...')
-      const httpUrl = serverUrl.replace('wss://', 'https://').replace('ws://', 'http://')
-      const response = await fetch(`${httpUrl}/api/pairing/create`, {
+      setStatus('토큰 생성 중...')
+      const response = await fetch(`${HTTP_SERVER_URL}/api/pairing/create`, {
         method: 'POST'
       })
       const data = await response.json()
       setPairingToken(data.token)
-      setStatus('페어링 토큰 생성됨!')
+      setStatus('토큰 생성 완료!')
+      setCopied(false)
     } catch (err) {
-      setStatus('페어링 생성 실패')
+      setStatus('토큰 생성 실패')
       console.error(err)
     }
   }
 
-  const saveConfig = () => {
-    if (serverUrl && pairingToken) {
-      localStorage.setItem('serverUrl', serverUrl)
+  const copyToken = async () => {
+    try {
+      await navigator.clipboard.writeText(pairingToken)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('복사 실패:', err)
+    }
+  }
+
+  const connect = () => {
+    if (pairingToken) {
       localStorage.setItem('pairingToken', pairingToken)
       setIsConfigured(true)
     }
@@ -255,35 +262,46 @@ function App() {
 
       {!isConfigured ? (
         <div className="config">
-          <h2>연결 설정</h2>
+          <h2>시작하기</h2>
           
-          <input
-            type="url"
-            placeholder="서버 URL"
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-          />
-          
-          <div className="token-row">
-            <input
-              type="text"
-              placeholder="페어링 토큰 (hfc_...)"
-              value={pairingToken}
-              onChange={(e) => setPairingToken(e.target.value)}
-            />
-            <button onClick={createPairing} className="small">생성</button>
-          </div>
+          <p className="description">
+            OpenClaw와 연결하려면 페어링 토큰이 필요합니다.
+          </p>
 
-          {pairingToken && (
-            <div className="token-display">
-              <p>📋 Gateway 설정에 이 토큰을 입력하세요:</p>
-              <code>{pairingToken}</code>
-            </div>
+          {!pairingToken ? (
+            <button onClick={createPairing} className="primary large">
+              🔑 토큰 생성
+            </button>
+          ) : (
+            <>
+              <div className="token-display">
+                <p>📋 이 토큰을 OpenClaw 설정에 추가하세요:</p>
+                <div className="token-box">
+                  <code>{pairingToken}</code>
+                  <button onClick={copyToken} className="copy-btn">
+                    {copied ? '✓ 복사됨' : '📋 복사'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="instructions">
+                <p><strong>OpenClaw 설정 방법:</strong></p>
+                <ol>
+                  <li>위 토큰을 복사</li>
+                  <li>OpenClaw config.yaml에 추가</li>
+                  <li>아래 "연결하기" 클릭</li>
+                </ol>
+              </div>
+
+              <button onClick={connect} className="primary">
+                연결하기
+              </button>
+
+              <button onClick={createPairing} className="secondary small">
+                새 토큰 생성
+              </button>
+            </>
           )}
-
-          <button onClick={saveConfig} disabled={!pairingToken}>
-            연결하기
-          </button>
         </div>
       ) : (
         <>
@@ -335,6 +353,7 @@ function App() {
               setIsConfigured(false)
               setIsConnected(false)
               setGatewayConnected(false)
+              setPairingToken('')
               localStorage.clear()
             }}
           >
