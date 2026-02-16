@@ -16,9 +16,11 @@
   padding-bottom: env(safe-area-inset-bottom, 20px);
 }
 
+/* ==================== Header ==================== */
 .header {
   text-align: center;
   padding: 20px 0;
+  position: relative;
 }
 
 .header h1 {
@@ -26,12 +28,25 @@
   margin-bottom: 10px;
 }
 
-.status {
+.logout-btn {
+  position: absolute;
+  top: 20px;
+  right: 0;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
   color: #888;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+  cursor: pointer;
 }
 
-/* 설정 화면 */
+.logout-btn:hover {
+  border-color: #666;
+  color: #aaa;
+}
+
+/* ==================== Config/Login Screens ==================== */
 .config {
   flex: 1;
   display: flex;
@@ -62,14 +77,27 @@
   background: #0f0f1a;
   color: #fff;
   font-size: 1rem;
+  text-align: center;
 }
 
 .config input::placeholder {
   color: #666;
 }
 
-/* 버튼 스타일 */
-.config button {
+.config .code-input {
+  font-size: 1.5rem;
+  letter-spacing: 8px;
+  font-weight: bold;
+}
+
+.error {
+  color: #e74c3c;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+/* ==================== Buttons ==================== */
+button {
   padding: 15px;
   border: none;
   border-radius: 10px;
@@ -79,111 +107,170 @@
   transition: all 0.2s;
 }
 
-.config button.primary {
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary {
   background: #4a90d9;
   color: #fff;
 }
 
-.config button.primary:hover {
+.primary:hover:not(:disabled) {
   background: #3a7bc8;
 }
 
-.config button.primary.large {
-  padding: 20px 30px;
-  font-size: 1.2rem;
+.primary.large {
+  padding: 18px 30px;
+  font-size: 1.1rem;
 }
 
-.config button.secondary {
+.secondary {
   background: transparent;
   border: 1px solid #444;
   color: #888;
 }
 
-.config button.secondary:hover {
+.secondary:hover:not(:disabled) {
   border-color: #666;
   color: #aaa;
 }
 
-.config button.small {
-  padding: 10px 15px;
-  font-size: 0.9rem;
+/* ==================== Pairings Screen ==================== */
+.pairings-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 500px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.config button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 토큰 표시 영역 */
-.token-display {
-  background: #1a1a2e;
-  padding: 20px;
-  border-radius: 12px;
+.pairings-screen h2 {
   text-align: center;
+  margin-bottom: 20px;
 }
 
-.token-display > p {
-  color: #aaa;
-  margin-bottom: 12px;
+.empty-pairings {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #666;
+  gap: 10px;
 }
 
-.token-box {
+.empty-pairings .hint {
+  font-size: 0.85rem;
+  max-width: 280px;
+}
+
+.pairings-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.pairing-item {
+  display: flex;
+  align-items: center;
+  background: #0f0f1a;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pairing-info {
+  flex: 1;
+  padding: 15px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pairing-info:hover {
+  background: rgba(74, 144, 217, 0.1);
+}
+
+.pairing-name {
+  font-weight: bold;
+}
+
+.pairing-date {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.delete-btn {
+  padding: 15px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid #222;
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+.delete-btn:hover {
+  opacity: 1;
+  background: rgba(231, 76, 60, 0.1);
+}
+
+/* ==================== Chat Header ==================== */
+.chat-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #0f0f1a;
-  padding: 12px 15px;
-  border-radius: 8px;
-}
-
-.token-box code {
-  flex: 1;
-  font-size: 0.9rem;
-  word-break: break-all;
-  text-align: left;
-  color: #4a90d9;
-}
-
-.copy-btn {
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  background: #4a90d9;
-  color: #fff;
-  font-size: 0.85rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.2s;
-}
-
-.copy-btn:hover {
-  background: #3a7bc8;
-}
-
-/* 안내 문구 */
-.instructions {
-  background: rgba(74, 144, 217, 0.1);
-  border: 1px solid rgba(74, 144, 217, 0.3);
-  border-radius: 10px;
-  padding: 15px;
-  font-size: 0.9rem;
-}
-
-.instructions p {
+  padding: 10px 0;
   margin-bottom: 10px;
-  color: #aaa;
 }
 
-.instructions ol {
-  margin-left: 20px;
+.back-btn {
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid #333;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.connection-name {
+  flex: 1;
+  font-weight: bold;
+}
+
+.status-text {
+  font-size: 0.8rem;
   color: #888;
 }
 
-.instructions li {
-  margin-bottom: 5px;
+/* ==================== Connection Info ==================== */
+.connection-info {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 10px;
+  font-size: 0.85rem;
 }
 
-/* 메시지 영역 */
+.connection-info span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.connection-info .on {
+  color: #2ecc71;
+}
+
+.connection-info .off {
+  color: #888;
+}
+
+/* ==================== Messages ==================== */
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -220,7 +307,13 @@
   line-height: 1.4;
 }
 
-/* 컨트롤 영역 */
+.empty {
+  text-align: center;
+  color: #666;
+  padding: 40px 20px;
+}
+
+/* ==================== Controls ==================== */
 .controls {
   display: flex;
   flex-direction: column;
@@ -258,69 +351,7 @@
   font-size: 0.9rem;
 }
 
-/* 리셋 버튼 */
-.reset-button {
-  padding: 10px 20px;
-  border: 1px solid #444;
-  border-radius: 8px;
-  background: transparent;
-  color: #888;
-  font-size: 0.85rem;
-  cursor: pointer;
-  margin-top: 10px;
-}
-
-.reset-button:hover {
-  border-color: #666;
-  color: #aaa;
-}
-
-/* 연결 상태 표시 */
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-left: 6px;
-}
-
-.dot.connected {
-  background: #4a90d9;
-}
-
-.dot.gateway {
-  background: #2ecc71;
-}
-
-.connection-info {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  padding: 10px;
-  font-size: 0.85rem;
-}
-
-.connection-info span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.connection-info .on {
-  color: #2ecc71;
-}
-
-.connection-info .off {
-  color: #888;
-}
-
-.empty {
-  text-align: center;
-  color: #666;
-  padding: 40px 20px;
-}
-
-/* 다크모드 대응 */
+/* ==================== Light Mode ==================== */
 @media (prefers-color-scheme: light) {
   .app {
     background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ed 100%);
@@ -337,17 +368,9 @@
     color: #666;
   }
 
-  .token-display {
+  .pairing-item {
     background: #fff;
     border: 1px solid #ddd;
-  }
-
-  .token-box {
-    background: #f5f5f5;
-  }
-
-  .instructions {
-    background: rgba(74, 144, 217, 0.05);
   }
 
   .message.assistant {
