@@ -146,7 +146,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', pairings: pairings.size });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`🎙️ HandsfreeClaw server running on port ${PORT}`);
 });
