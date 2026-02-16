@@ -111,10 +111,14 @@ function App() {
         body: JSON.stringify({ email })
       })
 
+      const data = await res.json()
       if (res.ok) {
         setScreen('verify')
+        // DEV mode: auto-fill code if returned by server
+        if (data.code) {
+          setCode(data.code)
+        }
       } else {
-        const data = await res.json()
         setError(data.error || '코드 전송 실패')
       }
     } catch {
