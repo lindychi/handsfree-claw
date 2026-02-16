@@ -9,7 +9,7 @@ interface Message {
   timestamp: Date
 }
 
-const DEFAULT_SERVER = 'wss://handsfree-claw.fly.dev' // 배포 후 변경
+const DEFAULT_SERVER = 'wss://handsfree-claw-production.up.railway.app'
 
 function App() {
   const [isListening, setIsListening] = useState(false)
